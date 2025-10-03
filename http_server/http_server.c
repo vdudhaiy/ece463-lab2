@@ -22,6 +22,7 @@
 #define LISTEN_QUEUE 50 /* Max outstanding connection requests; listen() param */
 #define DBADDR "127.0.0.1"
 #define FILE_CHUNK_SIZE 4096
+#define TOP_DIR "Webpage"
 
 // Function declarations
 int send400badrequest(int client_fd, char* client_ip, char* log_first_line);
@@ -47,20 +48,17 @@ int send400badrequest(int client_fd, char* client_ip, char* log_first_line){
 int validateURL(char* url, char* client_ip, char* log_first_line){
 	// Check if URL starts with '/'
 	if (url[0] != '/'){
-		log_request(client_ip, log_first_line, "400 Bad Request");
 		return 0; // Invalid URL
 	}
 
 	// Check for '/../' in the URL
 	if (strstr(url, "/../") != NULL){
-		log_request(client_ip, log_first_line, "400 Bad Request");
 		return 0; // Invalid URL
 	}
 
 	// Check if URL ends with '/..'
 	int len = strlen(url);
 	if (len >= 3 && strcmp(&url[len - 3], "/..") == 0){
-		log_request(client_ip, log_first_line, "400 Bad Request");
 		return 0; // Invalid URL
 	}
 
@@ -75,7 +73,16 @@ void log_request(char* client_ip,  char* first_line, char* status_code){
 
 int sendFile(int client_fd, char* filepath, char* client_ip, char* log_first_line){
 	FILE *file = fopen(filepath, "r");
+	// printf("log_first_line: %s\n", log_first_line);
 	if (file == NULL) {
+		// Send HTTP/1.0 404 Not Found
+		char header[2048];
+		snprintf(header, sizeof(header), "HTTP/1.0 404 Not Found\r\n\r\n");
+		if (send(client_fd, header, strlen(header), 0) < 0) {
+			fclose(file);
+			perror("send");
+			return -1;
+		}
 		log_request(client_ip, log_first_line, "404 Not Found");
 		return 0;
 	}
@@ -106,7 +113,9 @@ int sendFile(int client_fd, char* filepath, char* client_ip, char* log_first_lin
 
 // Main function
 int main(int argc, char *argv[])
-{
+{	
+	setvbuf(stdout, NULL, _IONBF, 0); // disable buffering for stdout
+
 	printf("Starting HTTP server...\n");
     // Ensure valid command format
 	printf("Validating command line arguments...\n");
@@ -191,8 +200,11 @@ int main(int argc, char *argv[])
 		
 		// create a copy of first_line to log later
 		char log_first_line[2048];
-		strncpy(log_first_line, first_line, sizeof(log_first_line) - 1);
-		log_first_line[sizeof(log_first_line) - 1] = '\0'; // ensure null-termination
+		if (first_line != NULL) {
+			snprintf(log_first_line, sizeof(log_first_line), "%s", first_line);
+		} else {
+			log_first_line[0] = '\0';
+		}
 
 		if (header_end == NULL){
 			printf("Request headers too large or malformed, sending 400 Bad Request.\n");
@@ -206,6 +218,7 @@ int main(int argc, char *argv[])
 		// Ensure it is a GET request
 		if (first_line != NULL && strncmp(first_line, "GET ", 4) == 0) {
 			printf("Request is a GET request.\n");
+			printf("First line of request: %s\n", first_line);
 			// Tokenize the first line to extract the method, URL, and HTTP version
 			char* method = strtok(first_line, " "); // "GET"
 			char* url = strtok(NULL, " "); // "/path"
@@ -213,40 +226,39 @@ int main(int argc, char *argv[])
 
 			// display method, url, http_version using
 			printf("Method: %s, URL: %s, HTTP Version: %s\n", method, url, http_version);
-			
+
+			// printf("log_first_line in main: %s\n", log_first_line);
+
 			// Validate URL
 			if (validateURL(url, client_ip, log_first_line) == 1){
 				// Serve the requested file/directory/URL
 				struct stat buffer;
 				int status;
 
-				// // Check if file exists
-				// status = stat(url, &buffer);
-				
 				printf("Request URL is valid: %s\n", url);
+
+				char filepath[2048]; // Separate buffer for actual file path to serve
+
 				// If the URL is just "/", serve "/index.html"
-				if (strstr(url, "/") == 0){
+				if (strcmp(url, "/") == 0){
 					printf("Request URL is root '/', serving '/index.html'\n");
-					url = "Webpage/index.html";
+					snprintf(filepath, sizeof(filepath), "%s/index.html", TOP_DIR);
 				}
-				//  If the request URL is a directory, but does NOT have a “/” at the end, then you should append “/index.html” to it.
-				else if (S_ISDIR(buffer.st_mode)){
+				// If the request URL is a directory (check using stat)
+				else if (stat(url, &buffer) == 0 && S_ISDIR(buffer.st_mode)){
 					printf("Request URL is a directory, appending '/index.html'\n");
-					strcat(url, "/index.html");
+					snprintf(filepath, sizeof(filepath), "%s%s/index.html", TOP_DIR, url);
 				}
+				// Otherwise, treat as a file
 				else{
 					printf("Request URL is a file, serving the file.\n");
-					// Add Webpage/ prefix to the URL
-					char temp[2048];
-					snprintf(temp, sizeof(temp), "Webpage%s", url);
-					strncpy(url, temp, sizeof(temp) - 1);
-					url[sizeof(temp) - 1] = '\0'; // ensure null-termination
+					snprintf(filepath, sizeof(filepath), "%s%s", TOP_DIR, url);
 				}
-				
-				printf("File found. Sending file: %s\n", url);
-				if (sendFile(new_fd, url, client_ip, log_first_line) < 0){
+
+				printf("Attempting to send file: %s\n", filepath);
+				if (sendFile(new_fd, filepath, client_ip, log_first_line) < 0){
 					close(new_fd);
-					exit(1); // exit if sendFile fails?
+					exit(1); // exit if sendFile fails
 				}
 			}
 			else{
@@ -259,7 +271,7 @@ int main(int argc, char *argv[])
 		}
 		else{
 			// Respond with HTTP/1.0 501 Not Implemented
-			char response[2048] =  "HTTP/1.0 501 Not Implemented\r\n[blank line]\r\n<html><body><h1>501 Not Implemented</h1></body></html>";
+			char response[2048] = "HTTP/1.0 501 Not Implemented\r\n\r\n<html><body><h1>501 Not Implemented</h1></body></html>";
 			
 			// Ensure send has worked
 			if (send(new_fd, response, strlen(response), 0) < 0) {
