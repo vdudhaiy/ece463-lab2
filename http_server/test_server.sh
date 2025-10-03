@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
 
-# Usage: ./test_http_server.sh [SERVPORT] [DBPORT]
-# Example: ./test_http_server.sh 8080 5432
-
 SERVPORT=${1:-36171}
 DBPORT=${2:-56171}
 
@@ -38,7 +35,7 @@ HOST="localhost"
 ### TESTS ###
 ## TASK 1: Serving Static Contents ##
 echo $'\n=== Testing TASK 1: Static Content Serving ==='
-# # 1. Disallow '/../' 
+# 1. Disallow '/../' 
 echo "[TEST] HTTP/1.0 GET /../secret.txt"
 REQUEST=$'GET /../secret.txt HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n'
 status_line=$(printf "%s" "$REQUEST" \
@@ -53,7 +50,7 @@ else
     echo "Status-line: $status_line"
 fi
 
-# # 2. Disallow ending with /.. 
+# 2. Disallow ending with /.. 
 echo "[TEST] HTTP/1.0 GET /dir/.."
 REQUEST=$'GET /dir/.. HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n'
 status_line=$(printf "%s" "$REQUEST" \
