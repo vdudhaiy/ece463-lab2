@@ -1,6 +1,6 @@
 /* The code is subject to Purdue University copyright policies.
- * Do not share, distribute, or post online.
- */
+* Do not share, distribute, or post online.
+*/
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,6 +23,7 @@
 #define DBADDR "127.0.0.1"
 #define FILE_CHUNK_SIZE 4096
 #define TOP_DIR "Webpage"
+#define UDP_PACKET_SIZE 4096
 
 // Function declarations
 int send400badrequest(int client_fd, char* client_ip, char* log_first_line);
@@ -33,7 +34,7 @@ int sendFile(int client_fd, char* filepath, char* client_ip, char* log_first_lin
 // Function definitions
 int send400badrequest(int client_fd, char* client_ip, char* log_first_line){
 	// Respond with HTTP/1.0 400 Bad Request
-	char response[2048] =  "HTTP/1.0 400 Bad Request\r\n[blank line]\r\n<html><body><h1>400 Bad Request</h1></body></html>";
+	char response[2048] =  "HTTP/1.0 400 Bad Request\r\n\r\n<html><body><h1>400 Bad Request</h1></body></html>";
 	
 	// Ensure send has worked
 	if (send(client_fd, response, strlen(response), 0) < 0) {
@@ -62,6 +63,11 @@ int validateURL(char* url, char* client_ip, char* log_first_line){
 		return 0; // Invalid URL
 	}
 
+	// Check if the URL is a search string
+	if (strchr(url, '?') != NULL){
+		return 2; // Must query the database
+	}
+
 	return 1; // Valid URL
 }
 
@@ -77,7 +83,7 @@ int sendFile(int client_fd, char* filepath, char* client_ip, char* log_first_lin
 	if (file == NULL) {
 		// Send HTTP/1.0 404 Not Found
 		char header[2048];
-		snprintf(header, sizeof(header), "HTTP/1.0 404 Not Found\r\n\r\n");
+		snprintf(header, sizeof(header), "HTTP/1.0 404 Not Found\r\n\r\n<html><body><h1>404 Not Found</h1></body></html>");
 		if (send(client_fd, header, strlen(header), 0) < 0) {
 			fclose(file);
 			perror("send");
@@ -111,12 +117,85 @@ int sendFile(int client_fd, char* filepath, char* client_ip, char* log_first_lin
 	return 1;
 }
 
+int handleDBresponse(int db_sockfd, int client_fd, struct sockaddr_in db_addr, socklen_t db_addr_len, char* client_ip, char* log_first_line){
+	// Receive response from DB server in while loop to ensure all data is received (if response is larger than UDP_PACKET_SIZE)
+	// Once the entire file has been sent, the database server will send a final UDP packet containing the string “DONE"
+	// If the database server is not responding, it should timeout after some time interval (e.g., 5 seconds), and respond to the client with “408 Request Timeout”.
+	char db_response[UDP_PACKET_SIZE]; // Buffer to store DB server response
+    int db_bytes_received;
+	int header_sent = 0;
+
+    while (1) {
+        db_bytes_received = recvfrom(db_sockfd, db_response, sizeof(db_response), 0,
+                                     (struct sockaddr*)&db_addr, &db_addr_len);
+
+        if (db_bytes_received < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                // Timeout occurred
+                printf("DB server timed out. Sending 408 Request Timeout to client.\n");
+
+                char header[2048];
+                snprintf(header, sizeof(header),
+                         "HTTP/1.0 408 Request Timeout\r\n\r\n"
+                         "<html><body><h1>408 Request Timeout</h1></body></html>");
+                send(client_fd, header, strlen(header), 0);
+                log_request(client_ip, log_first_line, "408 Request Timeout");
+                return -2;  // indicate timeout
+            } else {
+                perror("recvfrom");
+                return -1; // other error
+            }
+        }
+
+        // Check if this packet is exactly "DONE"
+		if (db_bytes_received == 4 && memcmp(db_response, "DONE", 4) == 0) {
+			printf("Received DONE, stopping.\n");
+			break; // end of file
+		}
+
+        // Check for "File Not Found" (ASCII)
+        if (db_bytes_received == 14 && memcmp(db_response, "File Not Found", 14) == 0) {
+            printf("Received 'File Not Found' from DB server.\n");
+            char header[2048];
+            snprintf(header, sizeof(header),
+                     "HTTP/1.0 404 Not Found\r\n\r\n"
+                     "<html><body><h1>404 Not Found</h1></body></html>");
+            send(client_fd, header, strlen(header), 0);
+            log_request(client_ip, log_first_line, "404 Not Found");
+            return -2; // indicate file not found
+        }
+
+		// Send HTTP header first time
+        if (!header_sent) {
+            char header[2048];
+            snprintf(header, sizeof(header),
+                     "HTTP/1.0 200 OK\r\n\r\n");
+            send(client_fd, header, strlen(header), 0);
+            header_sent = 1;
+        }
+
+        // Forward received bytes to the client
+        int bytes_sent = 0;
+        while (bytes_sent < db_bytes_received) {
+            int n = send(client_fd, db_response + bytes_sent, db_bytes_received - bytes_sent, 0);
+            if (n < 0) {
+                perror("send");
+                return -1; // error sending to client
+            }
+            bytes_sent += n;
+        }
+        printf("Forwarded %d bytes from DB server to client.\n", db_bytes_received);
+    }
+    log_request(client_ip, log_first_line, "200 OK");
+    return 1; // success
+}
+
+// -------------------------------------------------------------------------//
 // Main function
 int main(int argc, char *argv[])
 {	
 	setvbuf(stdout, NULL, _IONBF, 0); // disable buffering for stdout
 
-	printf("Starting HTTP server...\n");
     // Ensure valid command format
 	printf("Validating command line arguments...\n");
     if (argc != 3) {
@@ -230,7 +309,8 @@ int main(int argc, char *argv[])
 			// printf("log_first_line in main: %s\n", log_first_line);
 
 			// Validate URL
-			if (validateURL(url, client_ip, log_first_line) == 1){
+			int url_validation = validateURL(url, client_ip, log_first_line);
+			if (url_validation == 1){
 				// Serve the requested file/directory/URL
 				struct stat buffer;
 				int status;
@@ -247,7 +327,7 @@ int main(int argc, char *argv[])
 				// If the request URL is a directory (check using stat)
 				else if (stat(url, &buffer) == 0 && S_ISDIR(buffer.st_mode)){
 					printf("Request URL is a directory, appending '/index.html'\n");
-					snprintf(filepath, sizeof(filepath), "%s%s/index.html", TOP_DIR, url);
+					snprintf(filepath, sizeof(filepath), "%s/index.html", url);
 				}
 				// Otherwise, treat as a file
 				else{
@@ -260,6 +340,84 @@ int main(int argc, char *argv[])
 					close(new_fd);
 					exit(1); // exit if sendFile fails
 				}
+			}
+			else if (url_validation == 2){
+				// Extract the search string (part after '?')
+				char* search_string = strchr(url, '?');
+				if (search_string == NULL){
+					// This should not happen as validateURL already checked for '?'
+					if (send400badrequest(new_fd, client_ip, log_first_line) < 0){
+						close(new_fd);
+						exit(1); // exit if send400badrequest fails
+					}
+					continue; // continue listening for next request
+				}
+				search_string++; // Move past the '?'
+				// replace '+' with ' ' in search_string
+				for (char* p = search_string; *p != '\0'; p++){
+					if (*p == '+'){
+						*p = ' ';
+					}
+				}
+				// remove key= from the start of search_string if it exists
+				if (strncmp(search_string, "key=", 4) == 0){
+					search_string += 4;
+				}
+
+				// Communicate with the DB server using UDP
+				int db_sockfd;
+				struct sockaddr_in db_addr;
+				char db_port_str[6];
+				snprintf(db_port_str, sizeof(db_port_str), "%s", argv[2]);
+				int db_port = atoi(db_port_str);
+				char db_response[UDP_PACKET_SIZE]; // Buffer to store DB server response
+				socklen_t db_addr_len = sizeof(db_addr);
+				int db_bytes_received;
+
+				// Create UDP socket
+				if ((db_sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+					perror("socket");
+					close(new_fd);
+					exit(1); // exit if socket creation fails
+				}
+
+				// Configure DB server address struct
+				db_addr.sin_family = AF_INET; // IPv4
+				db_addr.sin_port = htons(db_port); // DB server port number
+				inet_pton(AF_INET, DBADDR, &db_addr.sin_addr); // DB server IP address
+				bzero(&(db_addr.sin_zero), 8); // Zero out padding bytes
+
+				// Create a timeval struct to specify the timeout duration
+				struct timeval tv;
+				tv.tv_sec = 5;  // 5 seconds
+				tv.tv_usec = 0; // 0 microseconds
+
+				// Set the receive timeout option
+				if (setsockopt(db_sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
+					perror("setsockopt(SO_RCVTIMEO) failed");
+					close(db_sockfd);
+					exit(1);
+				}
+
+				// Send search query to DB server
+				if (sendto(db_sockfd, search_string, strlen(search_string), 0, (struct sockaddr *) &db_addr, sizeof(struct sockaddr)) < 0) {
+					perror("sendto");
+					close(db_sockfd);
+					close(new_fd);
+					exit(1); // exit if sendto fails
+				}
+				
+				printf("Sent search query to DB server, waiting for response...\n");
+				
+				// Handle DB server response and forward to client
+				int db_response_status = handleDBresponse(db_sockfd, new_fd, db_addr, db_addr_len, client_ip, log_first_line);
+				if (db_response_status == -1){
+					close(db_sockfd);
+					close(new_fd);
+					exit(1); // exit if handleDBresponse fails
+				}
+				// Close DB socket after handling response
+				close(db_sockfd);
 			}
 			else{
 					if (send400badrequest(new_fd, client_ip, log_first_line) < 0){
