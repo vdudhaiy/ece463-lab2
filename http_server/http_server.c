@@ -132,7 +132,7 @@ int handleDBresponse(int db_sockfd, int client_fd, struct sockaddr_in db_addr, s
         if (db_bytes_received < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 // Timeout occurred
-                printf("DB server timed out. Sending 408 Request Timeout to client.\n");
+                // printf("DB server timed out. Sending 408 Request Timeout to client.\n");
 
                 char header[2048];
                 snprintf(header, sizeof(header),
@@ -149,13 +149,13 @@ int handleDBresponse(int db_sockfd, int client_fd, struct sockaddr_in db_addr, s
 
         // Check if this packet is exactly "DONE"
 		if (db_bytes_received == 4 && memcmp(db_response, "DONE", 4) == 0) {
-			printf("Received DONE, stopping.\n");
+			// printf("Received DONE, stopping.\n");
 			break; // end of file
 		}
 
         // Check for "File Not Found" (ASCII)
         if (db_bytes_received == 14 && memcmp(db_response, "File Not Found", 14) == 0) {
-            printf("Received 'File Not Found' from DB server.\n");
+            // printf("Received 'File Not Found' from DB server.\n");
             char header[2048];
             snprintf(header, sizeof(header),
                      "HTTP/1.0 404 Not Found\r\n\r\n"
@@ -184,7 +184,7 @@ int handleDBresponse(int db_sockfd, int client_fd, struct sockaddr_in db_addr, s
             }
             bytes_sent += n;
         }
-        printf("Forwarded %d bytes from DB server to client.\n", db_bytes_received);
+        // printf("Forwarded %d bytes from DB server to client.\n", db_bytes_received);
     }
     log_request(client_ip, log_first_line, "200 OK");
     return 1; // success
@@ -197,7 +197,7 @@ int main(int argc, char *argv[])
 	setvbuf(stdout, NULL, _IONBF, 0); // disable buffering for stdout
 
     // Ensure valid command format
-	printf("Validating command line arguments...\n");
+	// printf("Validating command line arguments...\n");
     if (argc != 3) {
         fprintf(stderr, "usage: ./http_server [server port] [DB port]\n");
         exit(1);
@@ -211,7 +211,7 @@ int main(int argc, char *argv[])
 	char client_ip[INET_ADDRSTRLEN]; // buffer to store client IP address string
 
     // Create socket
-	printf("Creating socket...\n");
+	// printf("Creating socket...\n");
     if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
 		perror("socket");
 		exit(1);
@@ -224,32 +224,32 @@ int main(int argc, char *argv[])
 	bzero(&(my_addr.sin_zero), 8); // Zero out padding bytes
 
 	// Bind socket to the specified port and address
-	printf("Binding socket to port %s...\n", argv[1]);
+	// printf("Binding socket to port %s...\n", argv[1]);
 	if (bind(sockfd, (struct sockaddr *) &my_addr, sizeof(struct sockaddr)) < 0) {
 		perror("bind");
 		exit(1);
 	}
 
 	// Listen for incoming connections (queue size = LISTEN_QUEUE)
-	printf("Listening for incoming connections...\n");
+	// printf("Listening for incoming connections...\n");
 	if (listen(sockfd, LISTEN_QUEUE) < 0) {
 		perror("listen");
 		exit(1);
 	}
 
 	// Main server loop: continuously accept client connections (must handle 1 request at a time)
-	printf("Server is ready to accept connections.\n");
+	// printf("Server is ready to accept connections.\n");
 	while(1) {
 		sin_size = sizeof(struct sockaddr_in);
 
 		// Accept a new connection
-		printf("Waiting to accept a new connection...\n");
+		// printf("Waiting to accept a new connection...\n");
 		if ((new_fd = accept(sockfd, (struct sockaddr *) &their_addr, &sin_size)) < 0) {
 			perror("accept");
 			exit(1); // exit if accept fails
 			// continue; // Should we continue if accept fails?
 		}
-		printf("Accepted a new connection.\n");
+		// printf("Accepted a new connection.\n");
 
 		// Convert client IP to human-readable form
 		inet_ntop(AF_INET, &(their_addr.sin_addr), client_ip, INET_ADDRSTRLEN);
@@ -269,7 +269,7 @@ int main(int argc, char *argv[])
 			exit(1); // exit if recv fails
 		}
 		
-		printf("Processing request...\n");
+		// printf("Processing request...\n");
 
 		// Parse headers to find the end of headers, if not found, then it means the request is too large, reject and return 400 Bad Request
         char *header_end = strstr(request, "\r\n\r\n");
@@ -286,7 +286,7 @@ int main(int argc, char *argv[])
 		}
 
 		if (header_end == NULL){
-			printf("Request headers too large or malformed, sending 400 Bad Request.\n");
+			// printf("Request headers too large or malformed, sending 400 Bad Request.\n");
 			if (send400badrequest(new_fd, client_ip, log_first_line) < 0){
 				close(new_fd);
 				exit(1); // exit if send400badrequest fails?
@@ -296,15 +296,15 @@ int main(int argc, char *argv[])
 		
 		// Ensure it is a GET request
 		if (first_line != NULL && strncmp(first_line, "GET ", 4) == 0) {
-			printf("Request is a GET request.\n");
-			printf("First line of request: %s\n", first_line);
+			// printf("Request is a GET request.\n");
+			// printf("First line of request: %s\n", first_line);
 			// Tokenize the first line to extract the method, URL, and HTTP version
 			char* method = strtok(first_line, " "); // "GET"
 			char* url = strtok(NULL, " "); // "/path"
 			char* http_version = strtok(NULL, " "); // "HTTP/1.0" or "HTTP/1.1"
 
 			// display method, url, http_version using
-			printf("Method: %s, URL: %s, HTTP Version: %s\n", method, url, http_version);
+			// printf("Method: %s, URL: %s, HTTP Version: %s\n", method, url, http_version);
 
 			// printf("log_first_line in main: %s\n", log_first_line);
 
@@ -315,30 +315,31 @@ int main(int argc, char *argv[])
 				struct stat buffer;
 				int status;
 
-				printf("Request URL is valid: %s\n", url);
+				// printf("Request URL is valid: %s\n", url);
 
 				char filepath[2048]; // Separate buffer for actual file path to serve
 
 				// If the URL is just "/", serve "/index.html"
 				if (strcmp(url, "/") == 0){
-					printf("Request URL is root '/', serving '/index.html'\n");
+					// printf("Request URL is root '/', serving '/index.html'\n");
 					snprintf(filepath, sizeof(filepath), "%s/index.html", TOP_DIR);
 				}
 				// If the request URL is a directory (check using stat)
-				else if (stat(url, &buffer) == 0 && S_ISDIR(buffer.st_mode)){
-					printf("Request URL is a directory, appending '/index.html'\n");
-					snprintf(filepath, sizeof(filepath), "%s/index.html", url);
+				// Remove leading '/' from url for filesystem path by using url + 1
+				else if (stat(url + 1, &buffer) == 0 && S_ISDIR(buffer.st_mode)){
+					// printf("Request URL is a directory, appending '/index.html'\n");
+					snprintf(filepath, sizeof(filepath), "%s/index.html", url + 1); 
 				}
 				// Otherwise, treat as a file
 				else{
-					printf("Request URL is a file, serving the file.\n");
+					// printf("Request URL is a file, serving the file.\n");
 					snprintf(filepath, sizeof(filepath), "%s%s", TOP_DIR, url);
 				}
 
-				printf("Attempting to send file: %s\n", filepath);
+				// printf("Attempting to send file: %s\n", filepath);
 				if (sendFile(new_fd, filepath, client_ip, log_first_line) < 0){
 					close(new_fd);
-					exit(1); // exit if sendFile fails
+					exit(1); // exit if sendFile fails (UNSURE)
 				}
 			}
 			else if (url_validation == 2){
@@ -353,15 +354,15 @@ int main(int argc, char *argv[])
 					continue; // continue listening for next request
 				}
 				search_string++; // Move past the '?'
+				// remove key= from the start of search_string if it exists
+				if (strncmp(search_string, "key=", 4) == 0){
+					search_string += 4;
+				}
 				// replace '+' with ' ' in search_string
 				for (char* p = search_string; *p != '\0'; p++){
 					if (*p == '+'){
 						*p = ' ';
 					}
-				}
-				// remove key= from the start of search_string if it exists
-				if (strncmp(search_string, "key=", 4) == 0){
-					search_string += 4;
 				}
 
 				// Communicate with the DB server using UDP
@@ -407,7 +408,7 @@ int main(int argc, char *argv[])
 					exit(1); // exit if sendto fails
 				}
 				
-				printf("Sent search query to DB server, waiting for response...\n");
+				// printf("Sent search query to DB server, waiting for response...\n");
 				
 				// Handle DB server response and forward to client
 				int db_response_status = handleDBresponse(db_sockfd, new_fd, db_addr, db_addr_len, client_ip, log_first_line);
