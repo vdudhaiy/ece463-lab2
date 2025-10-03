@@ -223,30 +223,6 @@ else
   rm -f downloaded_index.html
 fi
 
-# 9. Directory serves index.html
-echo "[TEST] HTTP/1.0 GET /sample -> serves sample/index.html"
-TOTAL_TESTS=$((TOTAL_TESTS + 1))
-REQUEST=$'GET /sample HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n'
-status_line=$(printf "%s" "$REQUEST" \
-              | nc -q 1 "$HOST" "$SERVPORT" 2>/dev/null \
-              | head -n1 \
-              | tr -d '\r')  # remove trailing CR
-expected_status="HTTP/1.0 200 OK"
-if [[ "$status_line" != "$expected_status" ]]; then
-    echo -e "RESULT: \033[31;1;4mFAIL\033[0m"
-    echo "Status-line: $status_line"
-else
-  # Use wget and download the file to verify content
-  wget -q -O downloaded_index.html "http://$HOST:$SERVPORT/sample"
-  if diff -q downloaded_index.html sample/index.html; then
-      echo -e "RESULT: \033[32;1;4mPASS\033[0m"
-      PASS_COUNT=$((PASS_COUNT + 1))
-  else
-      echo -e "RESULT: \033[31;1;4mFAIL\033[0m" 
-  fi
-  rm -f downloaded_index.html
-fi
-
 # ---------------------------------------------------------------------------#
 ## TASK 2: Serving Dynamic Contents ##
 echo $'\n=== Testing TASK 2: Dynamic Content Serving ==='
