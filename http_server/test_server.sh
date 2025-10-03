@@ -250,8 +250,6 @@ if cmp -s downloaded_image.jpg "cat_database/cute cat.jpg"; then
 else
     echo -e "RESULT: \033[31;1;4mFAIL\033[0m"
 fi
-# Clean up response file
-rm -f downloaded_image.jpg
 
 echo "=== Tests complete ==="
 sleep 5 # give server time to finish logging before cleanup
