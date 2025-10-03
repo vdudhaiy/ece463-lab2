@@ -2,3 +2,4 @@
 # ignore executable files but not .c files
 http_server/http_server
 http_server/db_server
+downloaded_image.jpg
