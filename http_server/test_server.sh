@@ -169,10 +169,10 @@ body=$(echo "$RESPONSE" | awk 'BEGIN{RS="\r\n\r\n"} NR==2{print}')
 # Compare with expected HTML content
 expected_body='<html><body><h1>501 Not Implemented</h1></body></html>'
 if [[ "$body" == "$expected_body" ]]; then
-    echo -e "Body: \033[32;1;4mPASS\033[0m"
+    echo -e "RESULT: \033[32;1;4mPASS\033[0m"
     PASS_COUNT=$((PASS_COUNT + 1))
 else
-    echo -e "Body: \033[31;1;4mFAIL\033[0m"
+    echo -e "RESULT: \033[31;1;4mFAIL\033[0m"
     echo "Body received: $body"
 fi
 
