@@ -153,7 +153,30 @@ else
 fi
 rm -f downloaded_index.html
 
-# 7. HTTP/1.0 POST
+# 7. HTTP/1.2 GET (invalid HTTP version)
+echo "[TEST] HTTP/1.2 GET /index.html -> 501 Not Implemented"
+TOTAL_TESTS=$((TOTAL_TESTS + 1))
+REQUEST=$'GET /index.html HTTP/1.2\r\nHost: localhost\r\nConnection: close\r\n\r\n'
+RESPONSE=$(printf "%s" "$REQUEST" | nc -q 1 "$HOST" "$SERVPORT" 2>/dev/null)
+status_line=$(echo "$RESPONSE" | head -n1 | tr -d '\r')
+expected_status="HTTP/1.0 501 Not Implemented"
+if [[ "$status_line" != "$expected_status" ]]; then
+    echo -e "RESULT: \033[31;1;4mFAIL\033[0m"
+    echo "Status-line: $status_line"
+fi
+# Extract body after the first blank line (\r\n\r\n)
+body=$(echo "$RESPONSE" | awk 'BEGIN{RS="\r\n\r\n"} NR==2{print}')
+# Compare with expected HTML content
+expected_body='<html><body><h1>501 Not Implemented</h1></body></html>'
+if [[ "$body" == "$expected_body" ]]; then
+    echo -e "RESULT: \033[32;1;4mPASS\033[0m"
+    PASS_COUNT=$((PASS_COUNT + 1))
+else
+    echo -e "RESULT: \033[31;1;4mFAIL\033[0m"
+    echo "Body received: $body"
+fi
+
+# 8. HTTP/1.0 POST
 echo "[TEST] HTTP/1.0 POST /index.html -> 501 Not Implemented"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
 REQUEST=$'POST /index.html HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n'
@@ -176,7 +199,45 @@ else
     echo "Body received: $body"
 fi
 
-# 8.   http://localhost:8888/ -> http://localhost:8888/index.html
+# 9. HTTP/1.1 POST
+echo "[TEST] HTTP/1.1 POST /index.html -> 501 Not Implemented"
+TOTAL_TESTS=$((TOTAL_TESTS + 1))
+REQUEST=$'POST /index.html HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n'
+RESPONSE=$(printf "%s" "$REQUEST" | nc -q 1 "$HOST" "$SERVPORT" 2>/dev/null)
+status_line=$(echo "$RESPONSE" | head -n1 | tr -d '\r')
+expected_status="HTTP/1.0 501 Not Implemented"
+if [[ "$status_line" != "$expected_status" ]]; then
+    echo -e "RESULT: \033[31;1;4mFAIL\033[0m"
+    echo "Status-line: $status_line"
+fi
+# Extract body after the first blank line (\r\n\r\n)
+body=$(echo "$RESPONSE" | awk 'BEGIN{RS="\r\n\r\n"} NR==2{print}')
+# Compare with expected HTML content
+expected_body='<html><body><h1>501 Not Implemented</h1></body></html>'
+if [[ "$body" == "$expected_body" ]]; then
+    echo -e "RESULT: \033[32;1;4mPASS\033[0m"
+    PASS_COUNT=$((PASS_COUNT + 1))
+else
+    echo -e "RESULT: \033[31;1;4mFAIL\033[0m"
+    echo "Body received: $body"
+fi
+
+# 10. Try non-HTTP request
+echo "[TEST] Non-HTTP request"
+TOTAL_TESTS=$((TOTAL_TESTS + 1))
+REQUEST=$'THIS IS NOT A VALID HTTP REQUEST\r\n\r\n'
+RESPONSE=$(printf "%s" "$REQUEST" | nc -q 1 "$HOST" "$SERVPORT" 2>/dev/null)
+status_line=$(echo "$RESPONSE" | head -n1 | tr -d '\r')
+expected="HTTP/1.0 501 Not Implemented"
+if [[ "$status_line" == "$expected" ]]; then
+    echo -e "RESULT: \033[32;1;4mPASS\033[0m"
+    PASS_COUNT=$((PASS_COUNT + 1))
+else
+    echo -e "RESULT: \033[31;1;4mFAIL\033[0m"
+    echo "Status-line: $status_line"
+fi
+
+# 11.   http://localhost:8888/ -> http://localhost:8888/index.html
 echo "[TEST] HTTP/1.0 GET /"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
 REQUEST=$'GET / HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n'
@@ -199,7 +260,7 @@ else
 fi
 rm -f downloaded_index.html
 
-# 9. Directory serves index.html
+# 12. Directory serves index.html
 echo "[TEST] HTTP/1.0 GET /Webpage -> serves Webpage/index.html"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
 REQUEST=$'GET /Webpage HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n'
@@ -227,7 +288,7 @@ fi
 ## TASK 2: Serving Dynamic Contents ##
 echo $'\n=== Testing TASK 2: Dynamic Content Serving ==='
 
-# 10. Test 408 Request Timeout from DB server -> Check by simply not starting DB server
+# 13. Test 408 Request Timeout from DB server -> Check by simply not starting DB server
 echo "[TEST] HTTP/1.0 GET /db/timeout.txt -> 408 Request Timeout"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
 REQUEST=$'GET /?key=cute+cat HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n'
@@ -248,7 +309,7 @@ fi
 DB_PID=$!
 sleep 1 # give DB server time to start 
 
-# 11. Test File Not Found from DB server
+# 14. Test File Not Found from DB server
 echo "[TEST] HTTP/1.0 GET /?key=really+cute+cat -> 404 Not Found"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
 REQUEST=$'GET /?key=really+cute+cat HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n'
@@ -263,7 +324,7 @@ else
     echo "Status-line: $status_line"
 fi
 
-# 12. Test valid file from DB server
+# 15. Test valid file from DB server
 echo "[TEST] HTTP/1.0 GET /?key=cute+cat"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
 # Use curl to fetch the image and save only the body
