@@ -30,6 +30,7 @@ int send400badrequest(int client_fd, char* client_ip, char* log_first_line);
 int validateURL(char* url, char* client_ip, char* log_first_line);
 void log_request(char* client_ip, char* first_line, char* status_code);
 int sendFile(int client_fd, char* filepath, char* client_ip, char* log_first_line);
+int handleDBresponse(int db_sockfd, int client_fd, struct sockaddr_in db_addr, socklen_t db_addr_len, char* client_ip, char* log_first_line);
 
 // Function definitions
 int send400badrequest(int client_fd, char* client_ip, char* log_first_line){
