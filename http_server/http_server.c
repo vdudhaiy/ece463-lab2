@@ -294,20 +294,17 @@ int main(int argc, char *argv[])
 			continue; // continue listening for next request
 		}
 		
-		// Ensure it is a GET request
-		if (first_line != NULL && strncmp(first_line, "GET ", 4) == 0) {
-			// printf("Request is a GET request.\n");
-			// printf("First line of request: %s\n", first_line);
-			// Tokenize the first line to extract the method, URL, and HTTP version
-			char* method = strtok(first_line, " "); // "GET"
-			char* url = strtok(NULL, " "); // "/path"
-			char* http_version = strtok(NULL, " "); // "HTTP/1.0" or "HTTP/1.1"
+		// printf("First line of request: %s\n", first_line);
+		// Tokenize the first line to extract the method, URL, and HTTP version
+		char* method = strtok(first_line, " "); // "GET"
+		char* url = strtok(NULL, " "); // "/path"
+		char* http_version = strtok(NULL, " "); // "HTTP/1.0" or "HTTP/1.1"
 
-			// display method, url, http_version using
-			// printf("Method: %s, URL: %s, HTTP Version: %s\n", method, url, http_version);
+		// display method, url, http_version using
+		// printf("Method: %s, URL: %s, HTTP Version: %s\n", method, url, http_version);
 
-			// printf("log_first_line in main: %s\n", log_first_line);
-
+		// Ensure it is a valid request (method = GET, http_version = HTTP/1.0 or HTTP/1.1)
+		if (first_line != NULL && (strcmp(method, "GET") == 0) && (strcmp(http_version, "HTTP/1.0") == 0 || strcmp(http_version, "HTTP/1.1") == 0)) {
 			// Validate URL
 			int url_validation = validateURL(url, client_ip, log_first_line);
 			if (url_validation == 1){
